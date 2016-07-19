@@ -1,0 +1,3 @@
+# python cli for qcloud cos
+
+没什么说的，这么简单的东西……

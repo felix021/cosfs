@@ -1,0 +1,7 @@
+*.log
+*.txt
+*.pyc
+*.bak
+*.swp
+*.swo
+cosfs_conf_local.py
