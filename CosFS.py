@@ -3,6 +3,7 @@
 
 import os
 import sys
+import traceback
 import time
 import requests
 
@@ -23,6 +24,18 @@ def to_unicode(x):
     if type(x) is str:
         return x.decode('utf-8')
     return x
+
+RETRY_COUNT = 3
+
+def retry(count, func, *args, **kwargs):
+    for i in range(count):
+        try:
+            return func(*args, **kwargs)
+        except Exception, e:
+            print >>sys.stderr, '[retry] %s(%s, %s) failed @ round %d' % (func, str(args), str(kwargs), i)
+            print >>sys.stderr, traceback.format_exc()
+            if i == count - 1:
+                raise
 
 def download_file(url, filename, headers=None):
     r = requests.get(url, headers=headers, stream=True)
@@ -136,22 +149,22 @@ class CosFS(object):
         else:
             raise CosFSException(-1, "invalid src(%s) and dest(%s)" % (src, dest))
 
-    def cpdir(self, src, dest):
+    def cpdir(self, src, dest, detailed=False):
         src = to_unicode(src)
         dest = to_unicode(dest)
         if src.startswith(u'cos:') and dest.startswith(u'cos:'):
             raise CosFSException(-1, "not supported")
         elif src.startswith(u'cos:'): #download
-            self.downloadDir(src[4:], dest)
+            self.downloadDir(src[4:], dest, detailed)
         elif dest.startswith(u'cos:'): #upload
-            self.uploadDir(src, dest[4:])
+            self.uploadDir(src, dest[4:], detailed)
         else:
             raise CosFSException(-1, "invalid src(%s) and dest(%s)" % (src, dest))
 
-    def downloadDir(self, remote, local):
+    def downloadDir(self, remote, local, detailed=False):
         raise CosFSException(-1, "not supported")
 
-    def uploadDir(self, local, remote):
+    def uploadDir(self, local, remote, detailed=False):
         if not remote.endswith(u'/'):
             remote += u'/'
 
@@ -162,17 +175,28 @@ class CosFS(object):
         if not os.path.isdir(local):
             raise CosFSException(-1, "please specify a local directory")
 
-        self.mkdir(remote)
+        retry(RETRY_COUNT, self.mkdir, remote)
 
         def doUpload(arg, dirname, filelist):
             dir_suffix = dirname[len(local):]
-            self.mkdir(remote + dir_suffix)
+            remote_dir = remote + dir_suffix
+            retry(RETRY_COUNT, self.mkdir, remote_dir)
+            if detailed:
+                print >>sys.stderr, '[doUpload] mkdir %s' % remote_dir
             for filename in filelist:
                 localfile = dirname.rstrip(u'/') + u'/' + filename
                 if os.path.isdir(localfile):
                     continue
-                remotefile = (remote + dir_suffix).rstrip(u'/') + u'/' + filename
-                self.upload(localfile, remotefile)
+                if os.path.islink(localfile):
+                    print >>sys.stderr, 'skip symlink %s' % (localfile)
+                    continue
+                remotefile = remote_dir.rstrip(u'/') + u'/' + filename
+                if detailed:
+                    print >>sys.stderr, '[doUpload] upload file %s ...' % remotefile,
+                #self.upload(localfile, remotefile)
+                retry(RETRY_COUNT, self.upload, localfile, remotefile)
+                if detailed:
+                    print >>sys.stderr, 'done'
 
         os.path.walk(local, doUpload, None)
 
@@ -230,4 +254,5 @@ if __name__ == '__main__':
     #pass
     from cosfs_conf import *
     fs = CosFS(bucket_id, bucket_key, bucket_secret, bucket_name)
+    #retry(RETRY_COUNT, fs.list_dir, '/store3/backup/db/10.237.228.61/')
     fs.list_dir('/store3/backup/db/10.237.228.61/')
