@@ -2,6 +2,7 @@
 #coding=utf-8
 
 import os
+import sys
 import time
 import requests
 
@@ -49,7 +50,12 @@ class CosFS(object):
         result = self.cos_client.list_folder(request)
         if result['code'] != 0:
             raise CosFSException(result['code'], result['message'] + ': ' + path)
-        return result['data']
+
+        data = result['data']
+        if data['has_more']:
+            args = (data['dircount'], data['filecount'], path.encode('utf-8'), len(data['infos']))
+            print >>sys.stderr, "[warning] there are %d directories and %d files in %s, while COS only returned %d entries." % args
+        return data
 
     def ls(self, path=u'/', detail=False, recursive=False):
         content = self.list_dir(path)
@@ -130,6 +136,47 @@ class CosFS(object):
         else:
             raise CosFSException(-1, "invalid src(%s) and dest(%s)" % (src, dest))
 
+    def cpdir(self, src, dest):
+        src = to_unicode(src)
+        dest = to_unicode(dest)
+        if src.startswith(u'cos:') and dest.startswith(u'cos:'):
+            raise CosFSException(-1, "not supported")
+        elif src.startswith(u'cos:'): #download
+            self.downloadDir(src[4:], dest)
+        elif dest.startswith(u'cos:'): #upload
+            self.uploadDir(src, dest[4:])
+        else:
+            raise CosFSException(-1, "invalid src(%s) and dest(%s)" % (src, dest))
+
+    def downloadDir(self, remote, local):
+        raise CosFSException(-1, "not supported")
+
+    def uploadDir(self, local, remote):
+        if not remote.endswith(u'/'):
+            remote += u'/'
+
+        if not local.endswith(u'/'):
+            remote += os.path.basename(local) + u'/'
+
+        local = os.path.abspath(local) + u'/'
+        if not os.path.isdir(local):
+            raise CosFSException(-1, "please specify a local directory")
+
+        self.mkdir(remote)
+
+        def doUpload(arg, dirname, filelist):
+            dir_suffix = dirname[len(local):]
+            self.mkdir(remote + dir_suffix)
+            for filename in filelist:
+                localfile = dirname.rstrip(u'/') + u'/' + filename
+                if os.path.isdir(localfile):
+                    continue
+                remotefile = (remote + dir_suffix).rstrip(u'/') + u'/' + filename
+                self.upload(localfile, remotefile)
+
+        os.path.walk(local, doUpload, None)
+
+
     def stat(self, path):
         request = StatFileRequest(self.bucket, to_unicode(path))
         result = self.cos_client.stat_file(request)
@@ -148,9 +195,10 @@ class CosFS(object):
             raise CosFSException(result['code'], result['message'])
 
     def mkdir(self, path):
+        path = to_unicode(path)
         if not path.endswith(u'/'):
             path += u'/'
-        request = CreateFolderRequest(self.bucket, to_unicode(path))
+        request = CreateFolderRequest(self.bucket, path)
         result = self.cos_client.create_folder(request)
         if result['code'] not in [0, -178]: #ok or already exists
             raise CosFSException(result['code'], result['message'])
@@ -179,4 +227,7 @@ class CosFS(object):
 
 
 if __name__ == '__main__':
-    pass
+    #pass
+    from cosfs_conf import *
+    fs = CosFS(bucket_id, bucket_key, bucket_secret, bucket_name)
+    fs.list_dir('/store3/backup/db/10.237.228.61/')
