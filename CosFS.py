@@ -24,6 +24,10 @@ SLEEP_INTERVAL = 1.0 #seconds
 CODE_SAME_FILE  = -4018
 CODE_EXISTED    = -177
 
+CONFLICT_ERROR      = 1
+CONFLICT_SKIP       = 2
+CONFLICT_OVERWRITE  = 3
+
 def to_unicode(x):
     if type(x) is str:
         return x.decode('utf-8')
@@ -131,7 +135,7 @@ class CosFS(object):
         url = fileattr['source_url'] + '?sign=' + fileattr['sign']
         download_file(url, '/dev/stdout')
 
-    def upload(self, local, remote, overwrite=False):
+    def upload(self, local, remote, overwrite=False, silent=False):
         local = to_unicode(local)
         remote = to_unicode(remote)
         if remote.endswith(u'/'):
@@ -143,7 +147,8 @@ class CosFS(object):
         result = self.cos_client.upload_file(request)
         if result['code'] != 0:
             if result['code'] == CODE_SAME_FILE:
-                print >>sys.stderr, "skipped: same file on COS"
+                if not silent:
+                    print >>sys.stderr, "skipped: same file on COS"
                 return
             raise CosFSException(result['code'], result['message'])
 
@@ -157,22 +162,22 @@ class CosFS(object):
         else:
             raise CosFSException(-1, "at least one of src/dest should start with `cos:`")
 
-    def cpdir(self, src, dest, ignoreFileExists=False):
+    def cpdir(self, src, dest, conflict=CONFLICT_ERROR):
         src = to_unicode(src)
         dest = to_unicode(dest)
         if src.startswith(u'cos:') and dest.startswith(u'cos:'):
             raise CosFSException(-1, "not supported")
         elif src.startswith(u'cos:'): #download
-            self.downloadDir(src[4:], dest, ignoreFileExists)
+            self.downloadDir(src[4:], dest, conflict)
         elif dest.startswith(u'cos:'): #upload
-            self.uploadDir(src, dest[4:], ignoreFileExists)
+            self.uploadDir(src, dest[4:], conflict)
         else:
             raise CosFSException(-1, "at least one of src/dest should start with `cos:`")
 
-    def downloadDir(self, remote, local, ignoreFileExists=False):
+    def downloadDir(self, remote, local, conflict):
         raise CosFSException(-1, "not supported yet")
 
-    def uploadDir(self, local, remote, ignoreFileExists=False):
+    def uploadDir(self, local, remote, conflict):
         if not remote.endswith(u'/'):
             remote += u'/'
 
@@ -187,14 +192,17 @@ class CosFS(object):
 
         def uploadFile(localfile, remotefile):
             try:
-                self.upload(localfile, remotefile)
+                self.upload(localfile, remotefile, silent=True)
                 print >>sys.stderr, 'done: new'
             except Exception, e:
-                if e[0] == CODE_SAME_FILE: #ErrSameFileUpload: with same sha1
-                    print >>sys.stderr, 'skipped: same'
-                    return
-                if ignoreFileExists and e[0] == CODE_EXISTED: #ERROR_CMD_COS_FILE_EXIST
-                    print >>sys.stderr, 'skipped: existed'
+                if e[0] == CODE_EXISTED: #ERROR_CMD_COS_FILE_EXIST
+                    if conflict == CONFLICT_SKIP:
+                        print >>sys.stderr, 'skipped: existed'
+                    elif conflict == CONFLICT_OVERWRITE:
+                        self.upload(localfile, remotefile, overwrite=True)
+                        print >>sys.stderr, 'done: overwrite'
+                    else:
+                        raise
                     return
                 raise
 
