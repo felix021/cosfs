@@ -21,8 +21,9 @@ CLI:
     ./cosfs ls / -r
     ./cosfs ls / -rl
 
-    ./cosfs cpdir ./foo  cos:/test/     # 'cp -r ./foo cos:/test/'
-    ./cosfs cpdir ./foo/ cos:/test/ -v  # 'cp -v -r ./foo/* cos:/test/'
+    ./cosfs cpdir ./foo  cos:/test/ # 'cp -v -r ./foo cos:/test/'
+    ./cosfs cpdir ./foo/ cos:/test/ # 'cp -v -r ./foo/* cos:/test/'
+    ./cosfs cpdir ./foo/ cos:/test/ -i # ignore file that already exists @ cos
 
     ./cosfs rmdir /test/
     ./cosfs rmdir /test/ -r
