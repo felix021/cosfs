@@ -19,6 +19,7 @@ from qcloud_cos import StatFileRequest
 from qcloud_cos import ListFolderRequest
 
 SIGN_EXPIRE = 86400 #seconds
+SLEEP_INTERVAL = 1.0 #seconds
 
 def to_unicode(x):
     if type(x) is str:
@@ -36,6 +37,7 @@ def retry(func, *args, **kwargs):
             print >>sys.stderr, traceback.format_exc()
             if i == RETRY_COUNT - 1:
                 raise
+            time.sleep(SLEEP_INTERVAL)
 
 def download_file(url, filename, headers=None):
     r = requests.get(url, headers=headers, stream=True)
@@ -194,7 +196,7 @@ class CosFS(object):
                 if os.path.isdir(localfile):
                     continue
                 if os.path.islink(localfile):
-                    print >>sys.stderr, 'skip symlink %s' % (localfile)
+                    print >>sys.stderr, '[doUpload] skip symlink %s' % (localfile)
                     continue
                 remotefile = remote_dir.rstrip(u'/') + u'/' + filename
 
