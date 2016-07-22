@@ -66,18 +66,37 @@ class CosFS(object):
         self.cos_client = CosClient(appid, secret_id, secret_key)
 
     def list_dir(self, path=u'/'):
+        path = to_unicode(path)
+
+        prefix = u''
+        if path.endswith(u'*'):
+            prefix = os.path.basename(path)[:-1]
+            path = os.path.dirname(path)
+
         if not path.endswith(u'/'):
             path += u'/'
-        request = ListFolderRequest(self.bucket, to_unicode(path))
-        result = self.cos_client.list_folder(request)
-        if result['code'] != 0:
-            raise CosFSException(result['code'], result['message'] + ': ' + path)
 
-        data = result['data']
-        if data['has_more']:
-            args = (data['dircount'], data['filecount'], path.encode('utf-8'), len(data['infos']))
-            print >>sys.stderr, "[warning] there are %d directories and %d files in %s, while COS only returned %d entries." % args
-        return data
+        context=u''
+        arr_data = []
+        while True:
+            request = ListFolderRequest(self.bucket, path, prefix=prefix, context=context)
+            result = self.cos_client.list_folder(request)
+            if result['code'] != 0:
+                raise CosFSException(result['code'], result['message'] + ': ' + path)
+
+            data = result['data']
+            arr_data.append(data)
+            if data['has_more']:
+                context = data['context']
+            else:
+                break
+
+        dataset = {'dircount': 0, 'filecount': 0, 'infos': []}
+        for data in arr_data:
+            dataset['dircount'] += data['dircount']
+            dataset['filecount'] += data['filecount']
+            dataset['infos'] += data['infos']
+        return dataset
 
     def ls(self, path=u'/', detail=False, recursive=False):
         content = self.list_dir(path)
@@ -280,4 +299,8 @@ if __name__ == '__main__':
     from cosfs_conf import *
     fs = CosFS(bucket_id, bucket_key, bucket_secret, bucket_name)
     #retry(fs.list_dir, '/store3/backup/db/10.237.228.61/')
-    fs.list_dir('/store3/backup/db/10.237.228.61/')
+    #result = fs.list_dir('/store3/backup/db/10.237.228.61/')
+    #del result['infos']
+
+    result = fs.list_dir('/store3/backup/db/10.6*')
+    print result

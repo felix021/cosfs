@@ -13,6 +13,7 @@ CLI:
     ./cosfs cp /etc/hosts cos:/
 
     ./cosfs ls / -l
+    ./cosfs ls /test* -l            #前缀匹配查询
 
     ./cosfs mkdir /test
     ./cosfs cp /etc/hosts cos:/test/
