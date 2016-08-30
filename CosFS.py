@@ -21,8 +21,9 @@ from qcloud_cos import ListFolderRequest
 SIGN_EXPIRE = 86400 #seconds
 SLEEP_INTERVAL = 1.0 #seconds
 
-CODE_SAME_FILE  = -4018
-CODE_EXISTED    = -177
+CODE_SAME_FILE          = -4018
+CODE_EXISTED            = -177
+CODE_ERR_OFF_GOBACK     = -4024
 
 CONFLICT_ERROR      = 1
 CONFLICT_SKIP       = 2
@@ -169,6 +170,14 @@ class CosFS(object):
                 if not silent:
                     print >>sys.stderr, "skipped: same file on COS"
                 return
+            if overwrite and result['code'] == CODE_ERR_OFF_GOBACK:
+                print >>sys.stderr, "fix tencent bug: remove remote file when ErrOffGoBack occurs"
+                """
+                上传出现这个4024的错误之后，覆盖（insertonly=0）参数也不能成功，只能删除文件后重新上传
+                建议您将分片大小改为1M 分片上传之间sleep 100ms 出现错误的概率会小很多
+                抱歉，这个问题暂时无法彻底解决，给您带来了不便。
+                """
+                self.rm(remote)
             raise CosFSException(result['code'], result['message'])
 
     def cp(self, src, dest, overwrite=False):
