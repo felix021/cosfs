@@ -1,5 +1,7 @@
 # python cli for qcloud cos
 
+注：目前只兼容 python 2.x，不支持 3.x
+
 没什么说的，这么简单的东西……
 
 算了还是简单说一下吧……
