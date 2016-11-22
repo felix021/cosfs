@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #coding=utf-8
 
+#author: felix021@gmail.com
+
 import os
 import sys
 import traceback
@@ -34,7 +36,7 @@ def to_unicode(x):
         return x.decode('utf-8')
     return x
 
-RETRY_COUNT = 3
+RETRY_COUNT = 6
 
 def retry(func, *args, **kwargs):
     for i in range(RETRY_COUNT):
