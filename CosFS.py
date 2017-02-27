@@ -4,6 +4,7 @@
 #author: felix021@gmail.com
 
 import os
+import errno
 import sys
 import traceback
 import time
@@ -35,7 +36,7 @@ def localMkdir(path):
     try:
         os.mkdir(path)
     except OSError, e:
-        if e.errno == 17 and os.path.isdir(path): #file exists
+        if e.errno == errno.EEXIST and os.path.isdir(path): #file exists
             return
         raise e
 
