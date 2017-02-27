@@ -31,6 +31,14 @@ CONFLICT_ERROR      = 1
 CONFLICT_SKIP       = 2
 CONFLICT_OVERWRITE  = 3
 
+def localMkdir(path):
+    try:
+        os.mkdir(path)
+    except OSError, e:
+        if e.errno == 17 and os.path.isdir(path): #file exists
+            return
+        raise e
+
 def to_unicode(x):
     if type(x) is str:
         return x.decode('utf-8')
@@ -204,8 +212,27 @@ class CosFS(object):
         else:
             raise CosFSException(-1, "at least one of src/dest should start with `cos:`")
 
+    #将[cos上remote目录里]的内容下载到[本地local目录里]，如果local目录不存在，会被创建
     def downloadDir(self, remote, local, conflict):
-        raise CosFSException(-1, "not supported yet")
+        remote = remote.rstrip(u'/')
+        local = local.rstrip(u'/')
+
+        def walk(path = u'/', level = 0):
+            print '[mkdir] ' + ' ' * level + local + path
+            localMkdir(local + path)
+
+            content = self.list_dir(remote + path)
+
+            for entry in content['infos']:
+                name = path + entry['name'].encode('utf-8')
+                if self.isFile(entry):
+                    print '[copy]  ' + ' ' * level + local + name
+                    overwrite = conflict == CONFLICT_OVERWRITE
+                    self.download(remote + name, local + name, overwrite)
+                else:
+                    walk(name + '/', level + 1)
+
+        walk()
 
     def uploadDir(self, local, remote, conflict):
         if not remote.endswith(u'/'):

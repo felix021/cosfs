@@ -84,7 +84,7 @@ if __name__ == '__main__':
         fs.rmdir(args[0], recursive)
 
     def cpdir(args):
-        '从本地传目录到cos（暂不支持cos到本地）'
+        '从本地传目录到cos、从cos下载到本地'
         if len(args) < 2:
             print >>sys.stderr, "command usage: cpdir <src> <dest> [-i|-f]"
             print >>sys.stderr, "  src/dest may start with `cos:` to indicate it's a cos path"
