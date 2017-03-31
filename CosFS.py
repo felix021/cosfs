@@ -10,6 +10,10 @@ import traceback
 import time
 import requests
 
+import Queue
+import thread
+import threading
+
 import qcloud_cos
 
 from qcloud_cos import CosClient
@@ -28,6 +32,13 @@ CODE_SAME_FILE          = -4018
 CODE_EXISTED            = -177
 CODE_ERR_OFF_GOBACK     = -4024
 
+#并发线程数量 Concurrency Thread Number
+NR_THREAD           = 10
+
+#失败重试次数
+RETRY_COUNT         = 6
+
+
 CONFLICT_ERROR      = 1
 CONFLICT_SKIP       = 2
 CONFLICT_OVERWRITE  = 3
@@ -44,8 +55,6 @@ def to_unicode(x):
     if type(x) is str:
         return x.decode('utf-8')
     return x
-
-RETRY_COUNT = 6
 
 def retry(func, *args, **kwargs):
     for i in range(RETRY_COUNT):
@@ -65,6 +74,34 @@ def download_file(url, filename, headers=None):
             if chunk: # filter out keep-alive new chunks
                 f.write(chunk)
         f.flush()
+
+class CosThread(threading.Thread):
+    def __init__(self, tid, queue):
+        threading.Thread.__init__(self)
+        self.tid    = tid
+        self.t_queue= queue
+
+    def run(self):
+        print >>sys.stderr, 'Thread %d starts' % (self.tid)
+        while not self.t_queue.empty():
+            func, arg = self.t_queue.get(block=True, timeout=1)
+            retry(func, *arg)
+        print >>sys.stderr, 'Thread %d ends' % (self.tid)
+
+    @classmethod
+    def start_new(cls, tid, queue):
+        t = cls(tid, queue)
+        t.start()
+        return t
+
+    @classmethod
+    def execute(cls, queue, nr_thread=NR_THREAD):
+        threads = []
+        for i in range(nr_thread):
+            threads.append(CosThread.start_new(i + 1, queue))
+
+        for t in threads:
+            t.join()
 
 class CosFSException(Exception):
     pass
@@ -202,6 +239,7 @@ class CosFS(object):
             raise CosFSException(-1, "at least one of src/dest should start with `cos:`")
 
     def cpdir(self, src, dest, conflict=CONFLICT_ERROR):
+        begin_at = time.time()
         src = to_unicode(src)
         dest = to_unicode(dest)
         if src.startswith(u'cos:') and dest.startswith(u'cos:'):
@@ -212,12 +250,15 @@ class CosFS(object):
             self.uploadDir(src, dest[4:], conflict)
         else:
             raise CosFSException(-1, "at least one of src/dest should start with `cos:`")
+        usage = time.time() - begin_at
+        #print '[Time Usage: %.6f]' % usage
 
     #将[cos上remote目录里]的内容下载到[本地local目录里]，如果local目录不存在，会被创建
     def downloadDir(self, remote, local, conflict):
         remote = remote.rstrip(u'/')
         local = local.rstrip(u'/')
 
+        file_queue = Queue.Queue()
         def walk(path = u'/', level = 0):
             print '[mkdir] ' + ' ' * level + local + path
             localMkdir(local + path)
@@ -229,11 +270,12 @@ class CosFS(object):
                 if self.isFile(entry):
                     print '[copy]  ' + ' ' * level + local + name
                     overwrite = conflict == CONFLICT_OVERWRITE
-                    self.download(remote + name, local + name, overwrite)
+                    file_queue.put([self.download, (remote + name, local + name, overwrite)])
                 else:
                     walk(name + '/', level + 1)
 
         walk()
+        CosThread.execute(file_queue)
 
     def uploadDir(self, local, remote, conflict):
         if not remote.endswith(u'/'):
@@ -250,6 +292,7 @@ class CosFS(object):
 
         def uploadFile(localfile, remotefile):
             try:
+                print >>sys.stderr, '[uploadFile] %s => %s' % (localfile, remotefile)
                 self.upload(localfile, remotefile, silent=True)
                 print >>sys.stderr, 'done: new'
             except Exception, e:
@@ -264,11 +307,13 @@ class CosFS(object):
                     return
                 raise
 
-        def doUpload(arg, dirname, filelist):
+        file_queue = Queue.Queue()
+
+        def process_dir(arg, dirname, filelist):
             dir_suffix = dirname[len(local):]
             remote_dir = remote + dir_suffix
-            retry(self.mkdir, remote_dir)
-            print >>sys.stderr, '[doUpload] mkdir %s' % remote_dir
+            file_queue.put([self.mkdir, (remote_dir,)])
+            print >>sys.stderr, '[doUpload] queue for mkdir %s' % remote_dir
             for filename in filelist:
                 localfile = dirname.rstrip(u'/') + u'/' + filename
                 if os.path.isdir(localfile):
@@ -277,12 +322,14 @@ class CosFS(object):
                     print >>sys.stderr, '[doUpload] skip symlink %s' % (localfile)
                     continue
                 remotefile = remote_dir.rstrip(u'/') + u'/' + filename
+                file_queue.put([uploadFile, (localfile, remotefile)])
+                print >>sys.stderr, '[doUpload] queue for upload file %s ...' % remotefile
 
-                print >>sys.stderr, '[doUpload] upload file %s ...' % remotefile,
-                retry(uploadFile, localfile, remotefile)
+        os.path.walk(local, process_dir, None)
 
-        os.path.walk(local, doUpload, None)
+        CosThread.execute(file_queue)
 
+        print >>sys.stderr, "[upload finished]"
 
     def stat(self, path):
         request = StatFileRequest(self.bucket, to_unicode(path))
@@ -310,24 +357,41 @@ class CosFS(object):
         if result['code'] not in [0, -178]: #ok or already exists
             raise CosFSException(result['code'], result['message'])
 
+    def delFolder(self, path):
+        print >>sys.stderr, '[delFolder] %s' % (path)
+        request = DelFolderRequest(self.bucket, to_unicode(path))
+        result = self.cos_client.del_folder(request)
+        if result['code'] != 0:
+            raise CosFSException(result['code'], result['message'])
+
     def rmdir(self, path, recursive=False):
         path = to_unicode(path)
         if not path.endswith(u'/'):
             path += u'/'
 
         if recursive:
-            content = self.list_dir(path)
-            for entry in content['infos']:
-                name = path.rstrip(u'/') + '/' + entry['name']
-                if self.isFile(entry):
-                    self.rm(name)
-                else:
-                    self.rmdir(name, True)
+            file_queue = Queue.Queue()
+            dir_list = []
+            def walk_dir(dirname):
+                print >>sys.stderr, '[walk_dir] dir %s' % (dirname)
+                dir_list.append(dirname)
 
-        request = DelFolderRequest(self.bucket, to_unicode(path))
-        result = self.cos_client.del_folder(request)
-        if result['code'] != 0:
-            raise CosFSException(result['code'], result['message'])
+                content = self.list_dir(dirname)
+                for entry in content['infos']:
+                    name = dirname.rstrip('/') + u'/' + entry['name']
+                    if self.isFile(entry):
+                        print >>sys.stderr, '[walk_dir] file %s' % (name)
+                        file_queue.put([self.rm, (name,)])
+                    else:
+                        walk_dir(name + '/')
+
+            walk_dir(path)
+            CosThread.execute(file_queue)
+
+            while dir_list:
+                self.delFolder(dir_list.pop())
+        else:
+            self.delFolder(path)
 
     def isFile(self, entry):
         return 'sha' in entry
