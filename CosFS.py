@@ -80,12 +80,16 @@ class CosThread(threading.Thread):
         threading.Thread.__init__(self)
         self.tid    = tid
         self.t_queue= queue
+        self.fail_list = []
 
     def run(self):
         print >>sys.stderr, 'Thread %d starts' % (self.tid)
         while not self.t_queue.empty():
             func, arg = self.t_queue.get(block=True, timeout=1)
-            retry(func, *arg)
+            try:
+                retry(func, *arg)
+            except Exception, exc:
+                self.fail_list.append([func, arg, exc])
         print >>sys.stderr, 'Thread %d ends' % (self.tid)
 
     @classmethod
@@ -100,8 +104,17 @@ class CosThread(threading.Thread):
         for i in range(nr_thread):
             threads.append(CosThread.start_new(i + 1, queue))
 
+        fail_list = []
         for t in threads:
+            fail_list += t.fail_list
             t.join()
+
+        if fail_list:
+            print >>sys.stderr, "=== FAILED LIST ==="
+            for func, arg, exc in fail_list:
+                print >>sys.stderr, " %s => %s" % (str(arg), str(exc))
+            raise Exception("%d entries failed" % len(fail_list))
+
 
 class CosFSException(Exception):
     pass
@@ -276,6 +289,7 @@ class CosFS(object):
 
         walk()
         CosThread.execute(file_queue)
+        print >>sys.stderr, "[download finished]"
 
     def uploadDir(self, local, remote, conflict):
         if not remote.endswith(u'/'):
@@ -390,8 +404,11 @@ class CosFS(object):
 
             while dir_list:
                 self.delFolder(dir_list.pop())
+
         else:
             self.delFolder(path)
+
+        print >>sys.stderr, "[rmdir finished]"
 
     def isFile(self, entry):
         return 'sha' in entry
