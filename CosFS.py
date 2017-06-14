@@ -120,12 +120,15 @@ class CosFSException(Exception):
     pass
 
 class CosFS(object):
-    def __init__(self, appid, secret_id, secret_key, bucket):
+    def __init__(self, appid, secret_id, secret_key, bucket, region = None):
         self.appid = appid
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.bucket = bucket
-        self.cos_client = CosClient(appid, secret_id, secret_key)
+        if region:
+            self.cos_client = CosClient(appid, secret_id, secret_key, region=region)
+        else:
+            self.cos_client = CosClient(appid, secret_id, secret_key)
 
     def list_dir(self, path=u'/'):
         path = to_unicode(path)
@@ -148,13 +151,28 @@ class CosFS(object):
 
             data = result['data']
             arr_data.append(data)
-            if data['has_more']:
+            has_more = False
+            if 'has_more' in data:
+                has_more = data['has_more']
+            if 'listover' in data: #cos v4
+                has_more = not data['listover']
+
+            if has_more:
                 context = data['context']
             else:
                 break
 
         dataset = {'dircount': 0, 'filecount': 0, 'infos': []}
         for data in arr_data:
+            if 'filecount' not in data:
+                data['filecount'] = 0
+                data['dircount'] = 0
+                for entry in data['infos']:
+                    if self.isFile(entry):
+                        data['filecount'] += 1
+                    else:
+                        entry['name'] = entry['name'].rstrip(u'/')
+                        data['dircount'] += 1
             dataset['dircount'] += data['dircount']
             dataset['filecount'] += data['filecount']
             dataset['infos'] += data['infos']
@@ -375,7 +393,7 @@ class CosFS(object):
         print >>sys.stderr, '[delFolder] %s' % (path)
         request = DelFolderRequest(self.bucket, to_unicode(path))
         result = self.cos_client.del_folder(request)
-        if result['code'] != 0:
+        if result['code'] not in [0, -197]:
             raise CosFSException(result['code'], result['message'])
 
     def rmdir(self, path, recursive=False):
@@ -417,7 +435,7 @@ class CosFS(object):
 if __name__ == '__main__':
     #pass
     from cosfs_conf import *
-    fs = CosFS(bucket_id, bucket_key, bucket_secret, bucket_name)
+    fs = CosFS(bucket_id, bucket_key, bucket_secret, bucket_name, region)
     #retry(fs.list_dir, '/store3/backup/db/10.237.228.61/')
     #result = fs.list_dir('/store3/backup/db/10.237.228.61/')
     #del result['infos']

@@ -13,7 +13,7 @@ def timeformat(seconds):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(seconds)))
 
 if __name__ == '__main__':
-    fs = CosFS.CosFS(bucket_id, bucket_key, bucket_secret, bucket_name)
+    fs = CosFS.CosFS(bucket_id, bucket_key, bucket_secret, bucket_name, region)
 
     def ls(args):
         '列出目录、文件（支持*前缀匹配）'

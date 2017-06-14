@@ -1,46 +1,125 @@
 #!/usr/bin/env python
-# coding=utf-8
+# -*- coding: utf-8 -*-
 
-################################################################################
-# CosConfig 有关cos的配置
-################################################################################
+
+class CosRegionInfo(object):
+
+    def __init__(self, region=None, hostname=None, download_hostname=None, *args, **kwargs):
+        self._hostname = None
+        self._download_hostname = None
+
+        if region in ['sh', 'shanghai']:
+            self._hostname = 'sh.file.myqcloud.com'
+            self._download_hostname = 'cossh.myqcloud.com'
+
+        elif region in ['gz', 'guangzhou']:
+            self._hostname = 'gz.file.myqcloud.com'
+            self._download_hostname = 'cosgz.myqcloud.com'
+
+        elif region in ['tj', 'tianjin', 'tianjing']:  # bug: for compact previous release
+            self._hostname = 'tj.file.myqcloud.com'
+            self._download_hostname = 'costj.myqcloud.com'
+
+        elif region in ['sgp', 'singapore']:
+            self._hostname = 'sgp.file.myqcloud.com'
+            self._download_hostname = 'cosspg.myqcloud.com'
+
+        elif region is not None:
+            self._hostname = '{region}.file.myqcloud.com'.format(region=region)
+            self._download_hostname = 'cos{region}.myqcloud.com'.format(region=region)
+        else:
+            if hostname and download_hostname:
+                self._hostname = hostname
+                self._download_hostname = download_hostname
+            else:
+                raise ValueError("region or [hostname, download_hostname] must be set, and region should be sh/gz/tj/sgp")
+
+    @property
+    def hostname(self):
+        assert self._hostname is not None
+        return self._hostname
+
+    @property
+    def download_hostname(self):
+        assert self._download_hostname is not None
+        return self._download_hostname
+
+
 class CosConfig(object):
-    def __init__(self):
-        self._end_point    = 'http://web.file.myqcloud.com/files/v1'
-        self._user_agent   = 'cos-python-sdk-v3.3'
-        self._timeout      = 3 
-        self._sign_expired = 300
+    """CosConfig 有关cos的配置"""
 
-    # 设置COS的域名地址
-    def set_end_point(self, end_point):
-        self._end_point = end_point
+    def __init__(self, timeout=300, sign_expired=300, enable_https=False, *args, **kwargs):
+        self._region = CosRegionInfo(*args, **kwargs)
+        self._user_agent = 'cos-python-sdk-v4'
+        self._timeout = timeout
+        self._sign_expired = sign_expired
+        self._enable_https = enable_https
+        if self._enable_https:
+            self._protocol = "https"
+        else:
+            self._protocol = "http"
 
-    # 获取域名地址
-    def get_end_point(self):
-        return self._end_point
+    def get_endpoint(self):
+        """获取域名地址
 
-    # 获取HTTP头中的user_agent
+        :return:
+        """
+        # tmpl = "%s://%s/files/v2"
+        return self._protocol + "://" + self._region.hostname + "/files/v2"
+
+    def get_download_hostname(self):
+        return self._region.download_hostname
+
     def get_user_agent(self):
+        """获取HTTP头中的user_agent
+
+        :return:
+        """
         return self._user_agent
 
-    # 设置连接超时, 单位秒
     def set_timeout(self, time_out):
+        """设置连接超时, 单位秒
+
+        :param time_out:
+        :return:
+        """
         assert isinstance(time_out, int)
         self._timeout = time_out
 
-    # 获取连接超时，单位秒
     def get_timeout(self):
+        """获取连接超时，单位秒
+
+        :return:
+        """
         return self._timeout
 
-    # 设置签名过期时间, 单位秒
     def set_sign_expired(self, expired):
+        """设置签名过期时间, 单位秒
+
+        :param expired:
+        :return:
+        """
         assert isinstance(expired, int)
         self._sign_expired = expired
 
-    # 获取签名过期时间, 单位秒
     def get_sign_expired(self):
+        """获取签名过期时间, 单位秒
+
+        :return:
+        """
         return self._sign_expired
 
-    # 打开https
+    @property
     def enable_https(self):
-        self._end_point = 'https://web.file.myqcloud.com/files/v1'
+        assert self._enable_https is not None
+        return self._enable_https
+
+    @enable_https.setter
+    def enable_https(self, val):
+        if val != self._enable_https:
+            if val:
+                self._enable_https = val
+                self._protocol = "https"
+            else:
+                self._enable_https = val
+                self._protocol = "http"

@@ -1,18 +1,16 @@
 #!/usr/bin/env python
-# coding=utf-8
+# -*- coding:utf-8 -*-
 
 from cos_params_check import ParamCheck
 
-################################################################################
-# CredInfo用户的身份信息
-################################################################################
-class CredInfo(object):
-    def __init__(self, appid, secret_id, secret_key):
-        self._appid       = appid
-        self._secret_id   = secret_id
-        self._secret_key  = secret_key
-        self._param_check = ParamCheck()
 
+class CredInfo(object):
+    """CredInfo用户的身份信息"""
+    def __init__(self, appid, secret_id, secret_key):
+        self._appid = appid
+        self._secret_id = secret_id
+        self._secret_key = secret_key
+        self._param_check = ParamCheck()
 
     def get_appid(self):
         return self._appid
@@ -30,6 +28,9 @@ class CredInfo(object):
             return False
         return self._param_check.check_param_unicode('secret_key', self._secret_key)
 
-    # 获取错误信息
     def get_err_tips(self):
+        """获取错误信息
+
+        :return:
+        """
         return self._param_check.get_err_tips()
