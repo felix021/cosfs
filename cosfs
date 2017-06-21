@@ -12,17 +12,33 @@ from cosfs_conf import *
 def timeformat(seconds):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(seconds)))
 
-if __name__ == '__main__':
-    fs = CosFS.CosFS(bucket_id, bucket_key, bucket_secret, bucket_name, region)
+def get_fs(bucket):
+    return CosFS.CosFS(bucket_id, bucket_key, bucket_secret, unicode(bucket), region)
 
+
+def parse_fullpath(fullpath):
+    if ':' not in fullpath:
+        return None, fullpath
+    return fullpath.split(':', 1)
+
+def get_bucket(fullpath):
+    bucket, path = parse_fullpath(fullpath)
+    return bucket
+
+def get_path(fullpath):
+    bucket, path = parse_fullpath(fullpath)
+    return path
+
+
+if __name__ == '__main__':
     def ls(args):
         '列出目录、文件（支持*前缀匹配）'
         path = '/'
         detail=False
         recursive=False
-        
+
         if len(args) == 0:
-            print >>sys.stderr, "command usage: ls <path> [-r|-l|-rl]"
+            print >>sys.stderr, "command usage: ls <bucket:path> [-r|-l|-rl]"
             sys.exit(2)
 
         path = args[0]
@@ -38,56 +54,92 @@ if __name__ == '__main__':
                 print >>sys.stderr, "invalid arg %s" % (args[1])
                 sys.exit(2)
 
-        fs.ls(path, detail=detail, recursive=recursive)
+        bucket, path = parse_fullpath(path)
+        get_fs(bucket).ls(path, detail=detail, recursive=recursive)
 
     def cp(args):
         '从本地拷贝文件到cos，或从cos拷贝回来'
         if len(args) < 2:
-            print >>sys.stderr, "command usage: cp <src> <dest> [-f]"
-            print >>sys.stderr, "  src/dest may start with `cos:` to indicate it's a cos path"
+            print >>sys.stderr, "command usage: cp <[bucket:]src> <[bucket:]dest> [-f]"
+            print >>sys.stderr, "  src/dest may start with `<bucket name>:` to indicate it's a cos path"
             sys.exit(2)
 
         overwrite = len(args) >= 3 and args[2] == '-f'
-        fs.cp(args[0], args[1], overwrite)
+
+        fullpath_from = args[0]
+        fullpath_to   = args[1]
+
+        bucket_from, path_from = parse_fullpath(fullpath_from)
+        bucket_to, path_to = parse_fullpath(fullpath_to)
+
+        if bucket_from:
+            get_fs(bucket_from).download(path_from, path_to, overwrite)
+            return
+
+        if bucket_to:
+            get_fs(bucket_to).upload(path_from, path_to, overwrite)
+            return
+
+        print >>sys.stderr, "please supply bucket_name in src or dest"
+        sys.exit(2)
 
     def mv(args):
         '在cos上移动文件'
         if len(args) < 2:
-            print >>sys.stderr, "command usage: mv <src> <dest>"
+            print >>sys.stderr, "command usage: mv <[bucket:]src> <[bucket:]dest>"
             sys.exit(2)
 
-        fs.mv(args[0], args[1])
+        fullpath_from = args[0]
+        fullpath_to   = args[1]
+
+        bucket_from, path_from = parse_fullpath(fullpath_from)
+        bucket_to, path_to = parse_fullpath(fullpath_to)
+
+        if bucket_from and bucket_to and bucket_from != bucket_to:
+            print >>sys.stderr, "can't move file from one bucket to another"
+            sys.exit(2)
+
+        bucket = bucket_from or bucket_to
+        if not bucket:
+            print >>sys.stderr, "please supply bucket_name in src or dest"
+            sys.exit(2)
+
+        get_fs(bucket).mv(path_from, path_to)
 
     def rm(args):
         '删除cos文件'
         if len(args) < 1:
-            print >>sys.stderr, "command usage: rm <path>"
+            print >>sys.stderr, "command usage: rm <bucket:path>"
             sys.exit(2)
 
-        fs.rm(args[0])
+        bucket, path = parse_fullpath(args[0])
+        get_fs(bucket).rm(path)
 
     def mkdir(args):
         '在cos创建目录'
         if len(args) < 1:
-            print >>sys.stderr, "command usage: mkdir <path>"
+            print >>sys.stderr, "command usage: mkdir <bucket:path>"
             sys.exit(2)
 
-        fs.mkdir(args[0])
+        bucket, path = parse_fullpath(args[0])
+        get_fs(bucket).mkdir(path)
 
     def rmdir(args):
         '删除cos目录'
         if len(args) < 1:
-            print >>sys.stderr, "command usage: rmdir <path> [-r]"
+            print >>sys.stderr, "command usage: rmdir <bucket:path> [-r]"
             sys.exit(2)
 
         recursive = len(args) > 1 and args[1] == '-r'
-        fs.rmdir(args[0], recursive)
+
+        bucket, path = parse_fullpath(args[0])
+        get_fs(bucket).rmdir(path, recursive)
 
     def cpdir(args):
         '从本地传目录到cos、从cos下载到本地'
         if len(args) < 2:
-            print >>sys.stderr, "command usage: cpdir <src> <dest> [-i|-f]"
-            print >>sys.stderr, "  src/dest may start with `cos:` to indicate it's a cos path"
+            print >>sys.stderr, "command usage: cpdir <[bucket:]src> <[bucket:]dest> [-i|-f]"
+            print >>sys.stderr, "  src/dest may start with `<bucket_name>:` to indicate it's a cos path"
             print >>sys.stderr, "  -i means skip file existed on cos"
             print >>sys.stderr, "  -f means overwrite file existed on cos"
             sys.exit(2)
@@ -100,23 +152,41 @@ if __name__ == '__main__':
                 conflict = CosFS.CONFLICT_OVERWRITE
             else:
                 raise Exception("unsupported arg: " + args[2])
-        fs.cpdir(args[0], args[1], conflict)
+
+        fullpath_from = args[0]
+        fullpath_to   = args[1]
+
+        bucket_from, path_from = parse_fullpath(fullpath_from)
+        bucket_to, path_to = parse_fullpath(fullpath_to)
+
+        if bucket_from:
+            get_fs(bucket_from).downloadDir(path_from, path_to, conflict)
+            return
+
+        if bucket_to:
+            get_fs(bucket_to).uploadDir(path_from, path_to, conflict)
+            return
+
+        print >>sys.stderr, "please supply bucket_name in src or dest"
+        sys.exit(2)
 
     def cat(args):
         '输出cos文件内容'
         if len(args) < 1:
-            print >>sys.stderr, "command usage: cat <path>"
+            print >>sys.stderr, "command usage: cat <bucket:path>"
             sys.exit(2)
 
-        fs.cat(args[0])
+        bucket, path = parse_fullpath(args[0])
+        get_fs(bucket).cat(path)
 
     def stat(args):
         '显示cos文件状态(大小、修改时间、创建时间)'
         if len(args) < 1:
-            print >>sys.stderr, "command usage: stat <path>"
+            print >>sys.stderr, "command usage: stat <bucket:path>"
             sys.exit(2)
 
-        ret = fs.stat(args[0])
+        bucket, path = parse_fullpath(args[0])
+        ret = get_fs(bucket).stat(path)
         print 'url: %s\nfilesize: %d bytes, mtime: %s, ctime: %s' % (ret['access_url'].encode('utf-8'), int(ret['filesize']), timeformat(ret['mtime']), timeformat(ret['ctime']))
 
     exec_conf = {

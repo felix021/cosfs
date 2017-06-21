@@ -22,34 +22,34 @@ CLI:
 
     ./cosfs
 
-    ./cosfs ls /
+    ./cosfs ls test:/
 
-    ./cosfs cp /etc/hosts cos:/
+    ./cosfs cp /etc/hosts test:/
 
-    ./cosfs ls / -l
-    ./cosfs ls /test* -l            #前缀匹配查询
+    ./cosfs ls test:/ -l
+    ./cosfs ls test:/test* -l            #前缀匹配查询
 
-    ./cosfs mkdir /test
-    ./cosfs cp /etc/hosts cos:/test/
-    ./cosfs cp cos:/hosts /tmp/hosts
+    ./cosfs mkdir test:/test
+    ./cosfs cp /etc/hosts test:/test/
+    ./cosfs cp test:/hosts /tmp/hosts
 
-    ./cosfs ls / -r
-    ./cosfs ls / -rl
+    ./cosfs ls test:/ -r
+    ./cosfs ls test:/ -rl
 
-    ./cosfs cpdir ./foo  cos:/test/ # 'cp -v -r ./foo cos:/test/'
-    ./cosfs cpdir ./foo/ cos:/test/ # 'cp -v -r ./foo/* cos:/test/'
-    ./cosfs cpdir ./foo/ cos:/test/ -i # ignore file that already exists @ cos
+    ./cosfs cpdir ./foo  test:/test/ # 'cp -v -r ./foo cos:/test/'
+    ./cosfs cpdir ./foo/ test:/test/ # 'cp -v -r ./foo/* cos:/test/'
+    ./cosfs cpdir ./foo/ test:/test/ -i # ignore file that already exists @ cos
 
-    ./cosfs cpdir cos:/test ./test    # stops in case a file exists @ cos
-    ./cosfs cpdir cos:/test ./test -f # overwrite in case a file exists @ cos
+    ./cosfs cpdir test:/test ./test    # stops in case a file exists @ cos
+    ./cosfs cpdir test:/test ./test -f # overwrite in case a file exists @ cos
 
-    ./cosfs rmdir /test/
-    ./cosfs rmdir /test/ -r
+    ./cosfs rmdir test:/test/
+    ./cosfs rmdir test:/test/ -r
 
-    ./cosfs cat /hosts
-    ./cosfs mv /hosts /hosts.bak
+    ./cosfs cat test:/hosts
+    ./cosfs mv test:/hosts test:/hosts.bak
 
-    ./cosfs rm /hosts.bak
+    ./cosfs rm test:/hosts.bak
 
 SDK:
 
